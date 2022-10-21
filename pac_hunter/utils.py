@@ -16,8 +16,10 @@ def clean_df(df):
 
     # Fill name column
     if not "name" in clean.columns:
-        clean["name"] = "candidate"
+        clean["name"] = clean["candidate"]
     
+
+
     # Trim party names to first letter
     clean["party"] = clean["party"].apply(lambda x: x[0])
 
