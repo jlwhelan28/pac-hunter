@@ -1,5 +1,44 @@
 import pandas as pd
 import requests
+from fuzzywuzzy import process
+from pac_hunter.states import us_state_to_abbrev, abbrev_to_us_state
+
+
+def clean_df(df):
+    # Drop to lowercase
+    clean = df.applymap(lambda x: x.strip().lower() if isinstance(x, str) else x)
+    clean.columns = df.columns.str.lower()
+
+    # Convert currency string to float
+    if "total" in clean.columns:
+        clean["total_float"] = clean["total"].apply(lambda x: float(re.sub(r'[^\d.]', '', x)))
+
+    # Fill name column
+    if not "name" in clean.columns:
+        clean["name"] = clean["candidate"]
+    clean["first_name"] = clean["name"].apply(lambda x: x.split(" ")[:-1])
+    clean["last_name"] = clean["name"].apply(lambda x: x.split(" ")[-1])
+
+    # Trim party names to first letter
+    clean["party"] = clean["party"].apply(lambda x: x[0])
+
+    # State full name or abbreviation to 2 letter code
+    state_codes = []
+    for s in clean["state"]:
+        if len(s) == 2:
+            # State is already in two-letter code form
+            state_codes.append(s)
+        else:
+            try:
+                # Try for exact match (will not occur in current setup due to capitalization)
+                state_codes.append(us_state_to_abbrev[s].lower())
+            except KeyError:
+                # Look for closest state match
+                closest_state_name = process.extractOne(s, list(us_state_to_abbrev.keys()))[0]
+                state_codes.append(us_state_to_abbrev[closest_state_name].lower())
+    clean["state_code"] = state_codes
+    return clean
+
 
 
 def fetch_committee_distributions(api_key, committee_name, recipient_names=[], committee_args={}, distribution_args={}):
