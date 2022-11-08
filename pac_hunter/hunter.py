@@ -1,7 +1,53 @@
+# Core modules
+import asyncio
+from io import BytesIO
+import os
+from zipfile import ZipFile
+from urllib.request import urlopen
+
+# Non-core modules
+import httpx
 import pandas as pd
-import requests
-from fuzzywuzzy import process
+from thefuzz import process
+from requests import ReadTimeout
+import numpy as np
+
+# Local modules
 from pac_hunter.states import us_state_to_abbrev, abbrev_to_us_state
+
+
+def read_bulk_file(zip_or_url, fn = None):
+    if os.path.isfile(zip_or_url):
+        with open(zip_or_url) as f:
+            zipf = ZipFile(BytesIO(f))
+    else:
+        res = urlopen(zip_or_url)
+        zipf = ZipFile(BytesIO(res.read()))
+        
+    if fn:
+        lines = [line.decode().strip().split('|') for line in zipf.open(fn).readlines()]
+    else:
+        fns = zipf.namelist()
+        if len(fns) == 1:
+            lines = [line.decode().strip().split('|') for line in zipf.open(fns[0]).readlines()]
+        elif len(fns) == 0:
+            raise ValueError("Zip file is empty")
+        else:
+            raise ValueError(
+                f"Provide filename to extract if zip has more than one entry"
+            )
+    return lines
+
+
+def bulk_file_to_df(headers, content):
+    df = pd.read_csv(headers)
+    bulk = read_bulk_file(content)
+    
+    # Assert that the number of headers matches the length of each row
+    assert len(df.columns) == len(bulk[0])
+    data = np.array(bulk)
+    
+    return pd.DataFrame(data, columns=df.columns)
 
 
 def clean_df(df):
@@ -16,7 +62,7 @@ def clean_df(df):
     # Fill name column
     if not "name" in clean.columns:
         clean["name"] = clean["candidate"]
-    clean["first_name"] = clean["name"].apply(lambda x: x.split(" ")[:-1])
+    clean["first_name"] = clean["name"].apply(lambda x: " ".join(x.split(" ")[:-1]))
     clean["last_name"] = clean["name"].apply(lambda x: x.split(" ")[-1])
 
     # Trim party names to first letter
@@ -40,74 +86,125 @@ def clean_df(df):
     return clean
 
 
+async def openfec_get(url, params, rate=4, limit=1, **kwargs):
+    params = params.copy()
+    params.update(kwargs)
+    throttle = asyncio.Semaphore(limit)
+    async with throttle:
+        async with httpx.AsyncClient() as client:
+            try:
+                res = await client.get(url, params=params)
+            except ReadTimeout:
+                await asyncio.sleep(rate)
+                res = await client.get(url, params=params)
 
-def fetch_committee_distributions(api_key, committee_name, recipient_names=[], committee_args={}, distribution_args={}):
-    res = fec_query_committee(api_key, committee_name, **committee_args)
-    if len(res["results"]) == 0:
-        return None
-    elif len(res["results"]) > 1:
-        print(f"Multiple results for committee {committee_name}, taking the first entry")
-    committee_id = res["results"][0]["id"]
-    
-    responses = fec_query_distributions(api_key, [committee_id], recipient_names, **distribution_args)
-
-    distributions = []
-    for res in responses:
-        for entry in res["results"]:
-            distributions.append(entry)
-    df = pd.DataFrame(distributions)
-    return df
+            if res.status_code == 200:
+                data = res.json()
+            else:
+                print(f"HTTP error: {res.status_code}")
+                print(f"Request: {res.url}")
+                raise RuntimeError(res.text)
+            await asyncio.sleep(rate)
+    return data
 
 
-def fec_query_committee(api_key, query, **kwargs):
-    url = "https://api.open.fec.gov/v1/names/committees"
-    payload = dict(
+async def openfec_get_pages(url, api_key, **kwargs):
+    params = dict(
         api_key=api_key,
-        q=query,
+        per_page=100,
         **kwargs,
     )
-    
-    res = requests.get(url, params=payload)
-    if res.status_code == 200:
-        return res.json()    
+    data = await openfec_get(url, params, **kwargs)
 
-    else:
-        raise RuntimeError(res.text)
-
-
-def fec_query_distributions(api_key, committee_ids, recipient_names, **kwargs):
-    url = "https://api.open.fec.gov/v1/schedules/schedule_b/by_recipient"
-
-    # Limit query to 50 names at a time
-    nbatch = 50
-    print("Dividing recipient names into groups of 50")
-    batch_recipient_names = [
-        recipient_names[i * nbatch:(i + 1) * nbatch] for i in range((len(recipient_names) + nbatch - 1) // nbatch )
-    ]
-    responses = []
-    for recipient_group in batch_recipient_names:
-        payload = dict(
-            api_key=api_key,
-            committee_id=committee_ids,
-            recipient_name=recipient_group,
-            **kwargs,
-        )
-        res = requests.get(url, params=payload)
-        if res.status_code == 200:
-            data = res.json()
-        else:
-            print(f"HTTP error: {res.status_code}")
-            print(f"Request: {res.url}")
-            raise RuntimeError(res.text)
-
+    responses = [data]
+    if "pagination" in data.keys():
         page_count = data["pagination"]["pages"]
-        responses.append(res.json())
-        if page_count > 1:
-            for ipage in range(1, page_count):
-                payload.update(page=ipage)
-                next = requests.get(url, params=payload)
-                if next.status_code == 200:
-                    responses.append(next.json())
-                else:
-                    print(next.text)
+    else:
+        page_count = 1
+    if page_count > 1:
+        for ipage in range(1, page_count):
+            params["page"] = ipage
+            try:
+                responses.append(await openfec_get(url, params, **kwargs))
+            except RuntimeError:
+                print(f"Warning: page {ipage + 1} returned a html error")
     return responses
+
+
+async def openfec_get_pages_by_chunks(url, api_key, chunk_parameter, nbatch = 50, **kwargs):
+
+    # Unpack the chunked parameter from kwargs
+    params = kwargs.copy()
+    array_to_chunk = params.pop(chunk_parameter)
+    array_to_chunk = list(array_to_chunk)
+
+    # Chunk the array
+    chunks = [
+        array_to_chunk[i * nbatch:(i + 1) * nbatch] for i in range((len(array_to_chunk) + nbatch - 1) // nbatch )
+    ]
+
+    # Repack the chunked parameter into a list of kwargs
+    chunked_params = []
+    for chunk in chunks:
+        d = {}
+        d.update(params)
+        d.update({chunk_parameter: chunk})
+        chunked_params.append(d)
+
+    # Gather the responses
+    responses = await asyncio.gather(*(
+        openfec_get_pages(url, api_key, **chunk_params) for chunk_params in chunked_params
+    ))
+    responses = [res for group in responses for res in group]
+
+    return responses
+
+
+async def fetch_committee_distributions(api_key, committee_name, recipient_names=[], candidate_args={}, committee_args={}, distribution_args={}):
+
+    url_candidates = "https://api.open.fec.gov/v1/names/candidates/"
+    url_committees = "https://api.open.fec.gov/v1/names/committees/"
+    url_distributions = "https://api.open.fec.gov/v1/schedules/schedule_b/by_recipient_id"
+    url_candidate_to_committee_data = "https://www.fec.gov/files/bulk-downloads/2022/ccl22.zip"
+    url_candidate_to_committee_headers = "https://www.fec.gov/files/bulk-downloads/data_dictionaries/ccl_header_file.csv"
+
+    # Search candidates by name to get FEC ids
+    responses = await openfec_get_pages_by_chunks(
+        url_candidates,
+        api_key,
+        chunk_parameter = "q",
+        q=recipient_names,
+        **candidate_args
+    )
+    candidates = [entry for res in responses for entry in res["results"]]
+    candidate_df = pd.DataFrame(candidates)
+
+    # Match the candidates FEC id to their campaign committee, the recipient of donations
+    ccl_df = bulk_file_to_df(url_candidate_to_committee_headers, url_candidate_to_committee_data)
+    candidate_df["CAND_ID"] = candidate_df["id"]
+    candidate_df = candidate_df.merge(ccl_df, on="CAND_ID")
+    candidate_committee_ids = candidate_df["CMTE_ID"].to_list()
+
+    # Search committees by name to get FEC ids
+    responses = await openfec_get_pages(url_committees, api_key, q=committee_name, **committee_args)
+    if len(responses[0]["results"]) == 0:
+        return None
+    elif len(responses[0]["results"]) > 1:
+        print(f"Multiple results for committee {committee_name}, taking the first entry")
+    committee_id = responses[0]["results"][0]["id"]
+
+    # Collect all schedule b distrubitions from the selected committee to the list of campaign committees
+    responses = await openfec_get_pages_by_chunks(
+        url_distributions,
+        api_key,
+        chunk_parameter = "recipient_id",
+        committee_id = committee_id,
+        recipient_id = candidate_committee_ids,
+        **distribution_args
+    )
+    distributions = [entry for res in responses for entry in res["results"]]
+    
+    candidate_df = candidate_df.rename(columns={"CMTE_ID": "recipient_id", "CAND_ID": "candidate_id"})
+    df = pd.DataFrame(distributions)
+    df = df.merge(candidate_df, on="recipient_id")
+    return pd.DataFrame(df)
