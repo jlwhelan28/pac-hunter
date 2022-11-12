@@ -1,1 +1,3 @@
 pac_hunter/constants.py
+pac_hunter/__pycache__/*
+.venv/
