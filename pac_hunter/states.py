@@ -1,4 +1,4 @@
-us_state_to_abbrev = {
+us_state_to_abbrev: dict = {
     "Alabama": "AL",
     "Alaska": "AK",
     "Arizona": "AZ",
@@ -57,6 +57,6 @@ us_state_to_abbrev = {
     "United States Minor Outlying Islands": "UM",
     "U.S. Virgin Islands": "VI",
 }
-    
+
 # invert the dictionary
-abbrev_to_us_state = dict(map(reversed, us_state_to_abbrev.items()))
+abbrev_to_us_state: dict = {v: k for k, v in us_state_to_abbrev.items()}

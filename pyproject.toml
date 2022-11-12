@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "pac-hunter"
 version = "0.1.0"
-description = "Search donations from specific PACs to 2020 election deniers, using OpenFEC and fivethirtyeight data"
+description = "Search donations from specific PACs to candidates of interest, using OpenFEC and fivethirtyeight data"
 authors = ["jlwhelan28 <jlwhelan28@gmail.com>"]
 license = "MIT"
 readme = "README.md"
@@ -13,6 +13,13 @@ httpx = "^0.23"
 pandas = "^1.5"
 thefuzz = "^0.19"
 requests = "^2.28"
+
+[tool.poetry.dev-dependencies]
+pre-commit = "^2.20"
+pytest = "^7.2"
+mypy = "*"
+types-requests = "^2.28"
+
 
 [build-system]
 requires = ["poetry-core"]
