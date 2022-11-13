@@ -2,3 +2,4 @@ pandas
 requests
 thefuzz
 httpx
+seaborn
