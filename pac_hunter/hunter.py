@@ -1,6 +1,7 @@
 # Core modules
 import asyncio
 import os
+import re
 from io import BytesIO
 from typing import List, Union
 from urllib.request import urlopen
@@ -17,7 +18,17 @@ from thefuzz import process
 from pac_hunter.states import abbrev_to_us_state, us_state_to_abbrev
 
 
-def read_bulk_file(zip_or_url, fn=None):
+def read_bulk_file(zip_or_url: str, fn=None) -> list:
+    """Read the contents of a FEC bulk data file
+
+    Args:
+        zip_or_url: Path to zip file or url
+        fn: Filename within zip to read if more than one files exist in the archive
+
+    Returns:
+        List of parsed lines from the bulk data file
+
+    """
     if os.path.isfile(zip_or_url):
         with open(zip_or_url) as f:
             zipf = ZipFile(BytesIO(f))
@@ -43,7 +54,16 @@ def read_bulk_file(zip_or_url, fn=None):
     return lines
 
 
-def bulk_file_to_df(headers, content):
+def bulk_file_to_df(headers: str, content: str) -> pd.DataFrame:
+    """Build a dataframe from FEC bulk data source
+
+    Args:
+        headers: url or path to csv file containing column headers
+        content: url or path to bulk columnar data from FEC
+
+    Returns:
+        Dataframe from FEC bulk data
+    """
     df = pd.read_csv(headers)
     bulk = read_bulk_file(content)
 
@@ -54,7 +74,15 @@ def bulk_file_to_df(headers, content):
     return pd.DataFrame(data, columns=df.columns)
 
 
-def clean_df(df):
+def clean_candidate_df(df: pd.DataFrame) -> pd.DataFrame:
+    """Clean dataframe with candidate info to consistent format
+
+    Args:
+        df: Pandas dataframe with candidate info
+
+    Returns
+        Dataframe with consistent format
+    """
     # Drop to lowercase
     clean = df.applymap(lambda x: x.strip().lower() if isinstance(x, str) else x)
     clean.columns = df.columns.str.lower()
@@ -94,7 +122,21 @@ def clean_df(df):
     return clean
 
 
-async def openfec_get(url, params, rate=4, limit=1, **kwargs):
+async def openfec_get(
+    url: str, params: dict, rate: int = 4, limit: int = 1, **kwargs
+) -> dict:
+    """Facilitate asynchronous OpenFEC GET request
+
+    Args:
+        url: OpenFEC endpoint
+        params: GET parameters
+        rate: Frequency in seconds to allow a number of requests specified by `limit`
+        limit: Count per rate to allow a GET request
+
+    Returns:
+        HTTP response json data
+
+    """
     params = params.copy()
     params.update(kwargs)
     throttle = asyncio.Semaphore(limit)
@@ -116,7 +158,18 @@ async def openfec_get(url, params, rate=4, limit=1, **kwargs):
     return data
 
 
-async def openfec_get_pages(url, api_key, **kwargs):
+async def openfec_get_pages(url: str, api_key: str, **kwargs) -> list:
+    """Get paginated results from OpenFEC endpoints
+
+    Args:
+        url: OpenFEC endpoint
+        api_key: OpenFEC api key `https://api.open.fec.gov/developers/`
+        kwargs: OpenFEC GET parameters
+
+    Returns:
+        List of http response json data
+
+    """
     params = dict(
         api_key=api_key,
         per_page=100,
@@ -140,8 +193,20 @@ async def openfec_get_pages(url, api_key, **kwargs):
 
 
 async def openfec_get_pages_by_chunks(
-    url, api_key, chunk_parameter, nbatch=50, **kwargs
-):
+    url: str, api_key: str, chunk_parameter: str, nbatch: int = 50, **kwargs
+) -> list:
+    """Get paginated results from OpenFEC endpoints, splitting a array-like parameter into chunks
+
+    Args:
+        url: OpenFEC endpoint
+        api_key: OpenFEC api key `https://api.open.fec.gov/developers/`
+        chunk_parameter: Parameter name for an array-like kwarg param to split into chunks
+        nbatch: Batch size for the chunk
+        kwargs: OpenFEC GET parameters
+
+    Returns:
+        List of http response json data
+    """
 
     # Unpack the chunked parameter from kwargs
     params = kwargs.copy()
@@ -178,16 +243,19 @@ async def fetch_committee_distributions(
     committee_name: str,
     recipient_names: Union[str, List[str]],
     api_key: str = "DEMO_KEY",
-    candidate_args={},
-    committee_args={},
-    distribution_args={},
-):
+    candidate_args: dict = {},
+    committee_args: dict = {},
+    distribution_args: dict = {},
+) -> pd.DataFrame:
     """Match distributions from a PAC to candidates of interest using OpenFEC
 
     Args:
         committee_name: Searchable Political Action Committee name
         recipient_names: Searchable list of candidates
-        api_key: OpenFEC
+        api_key: OpenFEC api key `https://api.open.fec.gov/developers/`
+        candidate_args: kwargs passed to /names/candidates
+        committee_args: kwargs passed to /names/committees
+        distribution_args: kwargs passed to /schedule_b/by_recipient_id
     """
 
     url_candidates = "https://api.open.fec.gov/v1/names/candidates/"
