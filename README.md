@@ -1,4 +1,4 @@
-# pac_hunter
+# pac_hunter :wolf:
 A simple project inspired by frustration over employers attempting to raise money from their ~~employees~~ captive audiences for the purpose of fueling their purchase of loyalty from politicians via Political Action Committees (PACs) in the United States.
 
 `pac_hunter` provides a wrapper around the fantastic API provided by the Federal Elections Committee called [OpenFEC](https://api.open.fec.gov/developers/). This tool is designed to match a PAC of interest with donations made to specific federal election candidates. The use case that inspired this tool was checking historical donations of a PAC to federal candidates or elected officials that denied the legitimacy of the 2020 election.
@@ -23,4 +23,4 @@ jupyter notebook
 ![](heatmap_example.png)
 
 # Future release
-I'm hopeful to provide a small app that runs a `streamlit` app that provides a simple interface to use this tool for non-developers. Beyond that, future plans will depend on interest.
+I'm hopeful to provide a small service that runs a `streamlit` app providing a simple interface to use this tool for non-developers. Beyond that, future plans will depend on interest.
