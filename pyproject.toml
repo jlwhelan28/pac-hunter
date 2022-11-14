@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "pac-hunter"
-version = "0.1.0"
+version = "0.1.1"
 description = "Search donations from specific PACs to candidates of interest, using OpenFEC and fivethirtyeight data"
 authors = ["jlwhelan28 <jlwhelan28@gmail.com>"]
 license = "MIT"
