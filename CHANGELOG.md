@@ -7,11 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] - 2022-11-13
+
+## Fixed
+- Updated dependency constraints for py3.7 compatability
+
 ## [0.1.1] - 2022-11-13
 
 ## Fixed
 - Fixed initially published package config to downgrade base python dep to py3.7
-
 
 ## [0.1.0] - 2022-11-13
 
