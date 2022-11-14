@@ -6,17 +6,7 @@ A simple project inspired by frustration over employers attempting to raise mone
 # Getting started
 Check the jupyter notebook provided with this repository `demo.ipynb`. You will have to either request your own self-service API key from the OpenFEC project, or use their `"DEMO_KEY"` which has a stricter rate limit.
 
-If you are not familiar with running jupyter notebooks from a local environment, look forward to a google colab notebook once I've published the package. In the meantime, you can run the demo yourself as long as you have python and git installed on your system.
-
-```bash
-git clone https://github.com/jlwhelan28/pac-hunter.git
-cd pac-hunter
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-pip install jupyter
-jupyter notebook
-```
+Run the demo notebook yourself in-browser with Binder [here](https://mybinder.org/v2/gh/jlwhelan28/pac-hunter/main?filepath=demo.ipynb)
 
 ##  Example: Raytheon Technologies' PAC donations to 2020 election deniers
 
